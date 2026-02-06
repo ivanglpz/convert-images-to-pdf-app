@@ -95,6 +95,11 @@ export default function HomeScreen() {
     [paperSize, orientation],
   );
 
+  const maxMarginMm = useMemo(
+    () => Math.floor(Math.max(0, Math.min(widthMm, heightMm) / 2 - 1)),
+    [heightMm, widthMm],
+  );
+
   const previewAspectRatio = useMemo(() => {
     return widthMm / heightMm;
   }, [heightMm, widthMm]);
@@ -436,10 +441,11 @@ export default function HomeScreen() {
                 <Ionicons name="scan-outline" size={16} color="#334155" />
                 <Text style={styles.controlTitle}>Padding de página</Text>
               </View>
-              {/* <View style={styles.marginRow}>
+              <View style={styles.marginRow}>
                 <Pressable
-                  onPressIn={() => startAutoAdjust(-2)}
-                  onPressOut={stopAutoAdjust}
+                  onPress={() =>
+                    setMarginMm((value) => clamp(value - 2, 0, maxMarginMm))
+                  }
                   style={styles.marginControl}
                 >
                   <Text style={styles.marginControlText}>-</Text>
@@ -448,13 +454,14 @@ export default function HomeScreen() {
                   <Text style={styles.marginValueText}>{marginMm} mm</Text>
                 </View>
                 <Pressable
-                  onPressIn={() => startAutoAdjust(2)}
-                  onPressOut={stopAutoAdjust}
+                  onPress={() =>
+                    setMarginMm((value) => clamp(value + 2, 0, maxMarginMm))
+                  }
                   style={styles.marginControl}
                 >
                   <Text style={styles.marginControlText}>+</Text>
                 </Pressable>
-              </View> */}
+              </View>
             </View>
 
             <View style={styles.previewCard}>
