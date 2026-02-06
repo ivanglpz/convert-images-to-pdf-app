@@ -69,8 +69,6 @@ export default function HomeScreen() {
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
   const [isConverting, setIsConverting] = useState(false);
-  const [pdfUri, setPdfUri] = useState<string | null>(null);
-  const [isSharing, setIsSharing] = useState(false);
 
   const { widthMm, heightMm } = useMemo(
     () => getPageDimensionsMm(paperSize, orientation),
@@ -103,7 +101,7 @@ export default function HomeScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       quality: 1,
       selectionLimit: 0,
@@ -214,41 +212,23 @@ export default function HomeScreen() {
 
       const html = buildPdfHtml(imageSources);
       const file = await Print.printToFileAsync({ html });
-      setPdfUri(file.uri);
-      Alert.alert("PDF creado", "Se generó correctamente el PDF.");
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert("PDF creado", `Se generó correctamente en: ${file.uri}`);
+        return;
+      }
+
+      await Sharing.shareAsync(file.uri, {
+        mimeType: "application/pdf",
+        UTI: "com.adobe.pdf",
+      });
     } catch (error) {
-      Alert.alert("Error", "No se pudo generar el PDF. Intenta nuevamente.");
+      Alert.alert("Error", "No se pudo generar o compartir el PDF.");
       console.error(error);
     } finally {
       setIsConverting(false);
     }
-  }, [buildPdfHtml, images.length]);
-
-  const sharePdf = useCallback(async () => {
-    if (!pdfUri) {
-      Alert.alert("Sin PDF", "Primero genera un PDF.");
-      return;
-    }
-
-    const available = await Sharing.isAvailableAsync();
-    if (!available) {
-      Alert.alert(
-        "No disponible",
-        "Compartir no está disponible en este dispositivo.",
-      );
-      return;
-    }
-
-    setIsSharing(true);
-    try {
-      await Sharing.shareAsync(pdfUri, {
-        mimeType: "application/pdf",
-        UTI: "com.adobe.pdf",
-      });
-    } finally {
-      setIsSharing(false);
-    }
-  }, [pdfUri]);
+  }, [buildPdfHtml, images]);
 
   const renderImageItem = useCallback(
     ({ item, index }: { item: SelectedImage; index: number }) => (
@@ -412,22 +392,9 @@ export default function HomeScreen() {
                 {isConverting ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Generar PDF</Text>
-                )}
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.secondaryButton,
-                  (!pdfUri || isSharing) && styles.buttonDisabled,
-                ]}
-                onPress={sharePdf}
-                disabled={!pdfUri || isSharing}
-              >
-                {isSharing ? (
-                  <ActivityIndicator color="#0f172a" />
-                ) : (
-                  <Text style={styles.secondaryButtonText}>Compartir PDF</Text>
+                  <Text style={styles.primaryButtonText}>
+                    Generar y compartir PDF
+                  </Text>
                 )}
               </Pressable>
             </View>
@@ -475,21 +442,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  secondaryButton: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: "#0f172a",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ffffff",
-  },
-  secondaryButtonText: {
-    color: "#0f172a",
     fontWeight: "600",
     fontSize: 15,
   },
