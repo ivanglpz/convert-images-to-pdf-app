@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Pressable,
   StyleSheet,
@@ -19,6 +18,9 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import DraggableFlatList, {
+  type RenderItemParams,
+} from "react-native-draggable-flatlist";
 
 type Orientation = "portrait" | "landscape";
 type PaperSize = "A4" | "Letter" | "Legal";
@@ -271,17 +273,24 @@ export default function HomeScreen() {
   }, [buildPdfHtml, images]);
 
   const renderImageItem = useCallback(
-    ({ item, index }: { item: SelectedImage; index: number }) => (
-      <View style={styles.imageRow}>
+    ({ item, drag, isActive, getIndex }: RenderItemParams<SelectedImage>) => (
+      <View style={[styles.imageRow, isActive && styles.imageRowDragging]}>
         <Image source={{ uri: item.uri }} style={styles.thumbnail} />
         <View style={styles.imageMeta}>
-          <Text style={styles.imageLabel}>Página {index + 1}</Text>
+          <Text style={styles.imageLabel}>Página {(getIndex?.() ?? 0) + 1}</Text>
           <Text style={styles.imageSub}>
             {item.width > 0 && item.height > 0
               ? `${item.width}x${item.height}`
               : "Sin dimensiones"}
           </Text>
         </View>
+        <Pressable
+          style={styles.dragHandle}
+          onLongPress={drag}
+          disabled={isActive}
+        >
+          <Text style={styles.dragHandleText}>Arrastrar</Text>
+        </Pressable>
         <Pressable
           style={styles.removeButton}
           onPress={() => removeImage(item.uri)}
@@ -295,10 +304,11 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
-      <FlatList
+      <DraggableFlatList
         data={images}
         keyExtractor={(item) => item.uri}
         renderItem={renderImageItem}
+        onDragEnd={({ data }) => setImages(data)}
         contentContainerStyle={[
           styles.contentContainer,
           responsiveContentStyle,
@@ -599,6 +609,10 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 10,
   },
+  imageRowDragging: {
+    opacity: 0.8,
+    borderColor: "#94a3b8",
+  },
   thumbnail: {
     width: 52,
     height: 52,
@@ -624,6 +638,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#cbd5e1",
+  },
+  dragHandle: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+  },
+  dragHandleText: {
+    color: "#334155",
+    fontWeight: "500",
+    fontSize: 13,
   },
   removeButtonText: {
     color: "#334155",
