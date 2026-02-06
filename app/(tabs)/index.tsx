@@ -1,7 +1,8 @@
+import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +22,7 @@ type SelectedImage = {
   uri: string;
   width: number;
   height: number;
+  mimeType: string | null;
 };
 
 const PAPER_SIZES: Record<PaperSize, { widthMm: number; heightMm: number }> = {
@@ -45,6 +47,20 @@ function getPageDimensionsMm(paperSize: PaperSize, orientation: Orientation) {
   return orientation === "portrait"
     ? { widthMm: base.widthMm, heightMm: base.heightMm }
     : { widthMm: base.heightMm, heightMm: base.widthMm };
+}
+
+function inferImageMimeType(image: SelectedImage): string {
+  if (image.mimeType?.startsWith("image/")) {
+    return image.mimeType;
+  }
+
+  const extension = image.uri.split("?")[0]?.split(".").pop()?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  if (extension === "heic" || extension === "heif") return "image/heic";
+
+  return "image/jpeg";
 }
 
 export default function HomeScreen() {
@@ -103,6 +119,7 @@ export default function HomeScreen() {
           uri: asset.uri,
           width: asset.width ?? 0,
           height: asset.height ?? 0,
+          mimeType: asset.mimeType ?? null,
         }));
       return [...previous, ...additions];
     });
@@ -112,18 +129,19 @@ export default function HomeScreen() {
     setImages((previous) => previous.filter((item) => item.uri !== uri));
   }, []);
 
-  const buildPdfHtml = useCallback(() => {
-    const pages = images
-      .map(
-        (image, index) => `
+  const buildPdfHtml = useCallback(
+    (imageSources: string[]) => {
+      const pages = imageSources
+        .map(
+          (source, index) => `
           <section class="sheet">
-            <img src="${escapeAttribute(image.uri)}" alt="Imagen ${index + 1}" />
+            <img src="${escapeAttribute(source)}" alt="Imagen ${index + 1}" />
           </section>
         `,
-      )
-      .join("");
+        )
+        .join("");
 
-    return `
+      return `
       <!doctype html>
       <html lang="es">
         <head>
@@ -171,7 +189,9 @@ export default function HomeScreen() {
         </body>
       </html>
     `;
-  }, [heightMm, images, marginMm, widthMm]);
+    },
+    [heightMm, marginMm, widthMm],
+  );
 
   const convertToPdf = useCallback(async () => {
     if (!images.length) {
@@ -184,7 +204,15 @@ export default function HomeScreen() {
 
     setIsConverting(true);
     try {
-      const html = buildPdfHtml();
+      const imageSources = await Promise.all(
+        images.map(async (image) => {
+          const base64 = await new File(image.uri).base64();
+          const mimeType = inferImageMimeType(image);
+          return `data:${mimeType};base64,${base64}`;
+        }),
+      );
+
+      const html = buildPdfHtml(imageSources);
       const file = await Print.printToFileAsync({ html });
       setPdfUri(file.uri);
       Alert.alert("PDF creado", "Se generó correctamente el PDF.");
