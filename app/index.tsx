@@ -70,14 +70,7 @@ function inferImageMimeType(image: SelectedImage): string {
 }
 
 export default function HomeScreen() {
-  const [images, setImages] = useState<SelectedImage[]>([
-    {
-      height: 373,
-      mimeType: "image/jpeg",
-      uri: "file:///data/user/0/com.anonymous.convertimagestopdfapp/cache/ImagePicker/3cee4a30-da7b-42ba-b622-52fbd4942b05.jpeg",
-      width: 560,
-    },
-  ]);
+  const [images, setImages] = useState<SelectedImage[]>([]);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
