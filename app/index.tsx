@@ -9,12 +9,16 @@ import {
   FlatList,
   Image,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 type Orientation = "portrait" | "landscape";
 type PaperSize = "A4" | "Letter" | "Legal";
@@ -69,6 +73,8 @@ export default function HomeScreen() {
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
   const [isConverting, setIsConverting] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
 
   const { widthMm, heightMm } = useMemo(
     () => getPageDimensionsMm(paperSize, orientation),
@@ -89,6 +95,40 @@ export default function HomeScreen() {
     const contentHeight = Math.max(heightMm - marginMm * 2, 1);
     return contentWidth / contentHeight;
   }, [heightMm, marginMm, widthMm]);
+
+  const horizontalPadding = useMemo(() => {
+    if (width >= 768) return 24;
+    if (width >= 420) return 16;
+    return 12;
+  }, [width]);
+
+  const contentMaxWidth = useMemo(() => {
+    if (width >= 1280) return 940;
+    if (width >= 1024) return 860;
+    if (width >= 768) return 720;
+    return width;
+  }, [width]);
+
+  const responsiveContentStyle = useMemo(
+    () => ({
+      paddingTop: Math.max(8, insets.top * 3),
+      paddingBottom: Math.max(20, insets.bottom + 16),
+      paddingHorizontal: horizontalPadding,
+      gap: width >= 768 ? 12 : 10,
+      alignSelf: "center" as const,
+      width: "100%" as const,
+      maxWidth: contentMaxWidth,
+      minHeight: height - insets.top - insets.bottom,
+    }),
+    [
+      contentMaxWidth,
+      height,
+      horizontalPadding,
+      insets.bottom,
+      insets.top,
+      width,
+    ],
+  );
 
   const pickImages = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -254,12 +294,15 @@ export default function HomeScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <FlatList
         data={images}
         keyExtractor={(item) => item.uri}
         renderItem={renderImageItem}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[
+          styles.contentContainer,
+          responsiveContentStyle,
+        ]}
         ListHeaderComponent={
           <View>
             <Text style={styles.title}>Convertir Imágenes a PDF</Text>
@@ -416,10 +459,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f4f6f8",
   },
   contentContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-    paddingTop: 8,
-    gap: 10,
+    flexGrow: 1,
   },
   title: {
     fontSize: 26,
