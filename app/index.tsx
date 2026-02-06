@@ -1,3 +1,4 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
@@ -14,13 +15,13 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import DraggableFlatList, {
+  type RenderItemParams,
+} from "react-native-draggable-flatlist";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import DraggableFlatList, {
-  type RenderItemParams,
-} from "react-native-draggable-flatlist";
 
 type Orientation = "portrait" | "landscape";
 type PaperSize = "A4" | "Letter" | "Legal";
@@ -275,31 +276,36 @@ export default function HomeScreen() {
   const renderImageItem = useCallback(
     ({ item, drag, isActive, getIndex }: RenderItemParams<SelectedImage>) => (
       <View style={[styles.imageRow, isActive && styles.imageRowDragging]}>
+        <Pressable
+          style={styles.dragHandle}
+          onPressIn={drag}
+          disabled={isActive}
+        >
+          <View style={styles.dragHandleContent}>
+            <Ionicons name="reorder-three-outline" size={16} color="#334155" />
+          </View>
+        </Pressable>
         <Image source={{ uri: item.uri }} style={styles.thumbnail} />
         <View style={styles.imageMeta}>
-          <Text style={styles.imageLabel}>Página {(getIndex?.() ?? 0) + 1}</Text>
+          <Text style={styles.imageLabel}>
+            Página {(getIndex?.() ?? 0) + 1}
+          </Text>
           <Text style={styles.imageSub}>
             {item.width > 0 && item.height > 0
               ? `${item.width}x${item.height}`
               : "Sin dimensiones"}
           </Text>
         </View>
-        <Pressable
-          style={styles.dragHandle}
-          onLongPress={drag}
-          disabled={isActive}
-        >
-          <Text style={styles.dragHandleText}>Arrastrar</Text>
-        </Pressable>
+
         <Pressable
           style={styles.removeButton}
           onPress={() => removeImage(item.uri)}
         >
-          <Text style={styles.removeButtonText}>Quitar</Text>
+          <Ionicons name="trash-outline" size={16} color="#334155" />
         </Pressable>
       </View>
     ),
-    [removeImage],
+    [removeImage, images],
   );
 
   return (
@@ -322,11 +328,21 @@ export default function HomeScreen() {
             </Text>
 
             <Pressable style={styles.primaryButton} onPress={pickImages}>
-              <Text style={styles.primaryButtonText}>Seleccionar fotos</Text>
+              <View style={styles.buttonContent}>
+                <Ionicons name="images-outline" size={18} color="#ffffff" />
+                <Text style={styles.primaryButtonText}>Seleccionar fotos</Text>
+              </View>
             </Pressable>
 
             <View style={styles.controlBlock}>
-              <Text style={styles.controlTitle}>Paper size</Text>
+              <View style={styles.controlTitleRow}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={16}
+                  color="#334155"
+                />
+                <Text style={styles.controlTitle}>Paper size</Text>
+              </View>
               <View style={styles.optionRow}>
                 {(["A4", "Letter", "Legal"] as const).map((option) => (
                   <Pressable
@@ -351,7 +367,14 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.controlBlock}>
-              <Text style={styles.controlTitle}>Orientation</Text>
+              <View style={styles.controlTitleRow}>
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={16}
+                  color="#334155"
+                />
+                <Text style={styles.controlTitle}>Orientation</Text>
+              </View>
               <View style={styles.optionRow}>
                 {(["portrait", "landscape"] as const).map((option) => (
                   <Pressable
@@ -445,9 +468,14 @@ export default function HomeScreen() {
                 {isConverting ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>
-                    Generar y compartir PDF
-                  </Text>
+                  <View style={styles.buttonContent}>
+                    <Ionicons
+                      name="document-attach-outline"
+                      size={18}
+                      color="#ffffff"
+                    />
+                    <Text style={styles.primaryButtonText}>Generar PDF</Text>
+                  </View>
                 )}
               </Pressable>
             </View>
@@ -495,16 +523,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 15,
   },
+  buttonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
   buttonDisabled: {
     opacity: 0.55,
   },
   controlBlock: {
     marginTop: 14,
   },
+  controlTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
   controlTitle: {
     fontSize: 13,
     color: "#334155",
-    marginBottom: 8,
     fontWeight: "600",
   },
   optionRow: {
@@ -641,11 +680,16 @@ const styles = StyleSheet.create({
   },
   dragHandle: {
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     backgroundColor: "#f8fafc",
+  },
+  dragHandleContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   dragHandleText: {
     color: "#334155",
