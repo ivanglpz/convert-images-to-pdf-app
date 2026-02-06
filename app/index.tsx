@@ -3,7 +3,7 @@ import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -76,6 +75,12 @@ export default function HomeScreen() {
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
   const [isConverting, setIsConverting] = useState(false);
+  const autoAdjustTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const autoAdjustIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
 
@@ -92,6 +97,40 @@ export default function HomeScreen() {
   useEffect(() => {
     setMarginMm((current) => clamp(current, 0, maxMarginMm));
   }, [maxMarginMm]);
+
+  const adjustMargin = useCallback(
+    (delta: number) => {
+      setMarginMm((value) => clamp(value + delta, 0, maxMarginMm));
+    },
+    [maxMarginMm],
+  );
+
+  const stopAutoAdjust = useCallback(() => {
+    if (autoAdjustTimeoutRef.current) {
+      clearTimeout(autoAdjustTimeoutRef.current);
+      autoAdjustTimeoutRef.current = null;
+    }
+    if (autoAdjustIntervalRef.current) {
+      clearInterval(autoAdjustIntervalRef.current);
+      autoAdjustIntervalRef.current = null;
+    }
+  }, []);
+
+  const startAutoAdjust = useCallback(
+    (delta: number) => {
+      adjustMargin(delta);
+      stopAutoAdjust();
+
+      autoAdjustTimeoutRef.current = setTimeout(() => {
+        autoAdjustIntervalRef.current = setInterval(() => {
+          setMarginMm((value) => clamp(value + delta, 0, maxMarginMm));
+        }, 110);
+      }, 240);
+    },
+    [adjustMargin, maxMarginMm, stopAutoAdjust],
+  );
+
+  useEffect(() => stopAutoAdjust, [stopAutoAdjust]);
 
   const previewAspectRatio = useMemo(() => {
     const contentWidth = Math.max(widthMm - marginMm * 2, 1);
@@ -172,11 +211,16 @@ export default function HomeScreen() {
 
   const buildPdfHtml = useCallback(
     (imageSources: string[]) => {
+      const contentWidthMm = Math.max(widthMm - marginMm * 2, 1);
+      const contentHeightMm = Math.max(heightMm - marginMm * 2, 1);
+
       const pages = imageSources
         .map(
           (source, index) => `
           <section class="sheet">
-            <img src="${escapeAttribute(source)}" alt="Imagen ${index + 1}" />
+            <div class="content">
+              <img src="${escapeAttribute(source)}" alt="Imagen ${index + 1}" />
+            </div>
           </section>
         `,
         )
@@ -201,15 +245,14 @@ export default function HomeScreen() {
             }
 
             .sheet {
-              box-sizing: border-box;
               width: ${widthMm}mm;
               height: ${heightMm}mm;
-              padding: ${marginMm}mm;
               display: flex;
               align-items: center;
               justify-content: center;
               page-break-after: always;
               break-after: page;
+              overflow: hidden;
             }
 
             .sheet:last-child {
@@ -217,7 +260,15 @@ export default function HomeScreen() {
               break-after: auto;
             }
 
-            .sheet img {
+            .content {
+              width: ${contentWidthMm}mm;
+              height: ${contentHeightMm}mm;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .content img {
               width: 100%;
               height: 100%;
               object-fit: contain;
@@ -399,34 +450,24 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.controlBlock}>
-              <Text style={styles.controlTitle}>Margin (mm)</Text>
+              <View style={styles.controlTitleRow}>
+                <Ionicons name="scan-outline" size={16} color="#334155" />
+                <Text style={styles.controlTitle}>Padding de página</Text>
+              </View>
               <View style={styles.marginRow}>
                 <Pressable
-                  onPress={() =>
-                    setMarginMm((value) => clamp(value - 2, 0, maxMarginMm))
-                  }
+                  onPressIn={() => startAutoAdjust(-2)}
+                  onPressOut={stopAutoAdjust}
                   style={styles.marginControl}
                 >
                   <Text style={styles.marginControlText}>-</Text>
                 </Pressable>
-                <TextInput
-                  keyboardType="number-pad"
-                  value={String(marginMm)}
-                  onChangeText={(text) =>
-                    setMarginMm(
-                      clamp(
-                        Number.parseInt(text || "0", 10) || 0,
-                        0,
-                        maxMarginMm,
-                      ),
-                    )
-                  }
-                  style={styles.marginInput}
-                />
+                <View style={styles.marginValue}>
+                  <Text style={styles.marginValueText}>{marginMm} mm</Text>
+                </View>
                 <Pressable
-                  onPress={() =>
-                    setMarginMm((value) => clamp(value + 2, 0, maxMarginMm))
-                  }
+                  onPressIn={() => startAutoAdjust(2)}
+                  onPressOut={stopAutoAdjust}
                   style={styles.marginControl}
                 >
                   <Text style={styles.marginControlText}>+</Text>
@@ -590,23 +631,23 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     marginTop: -2,
   },
-  marginInput: {
+  marginValue: {
     flex: 1,
     height: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     backgroundColor: "#ffffff",
-    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  marginValueText: {
     color: "#0f172a",
+    fontWeight: "600",
   },
   previewCard: {
     marginTop: 16,
-    padding: 12,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#ffffff",
   },
   previewTitle: {
     fontSize: 13,
@@ -616,10 +657,9 @@ const styles = StyleSheet.create({
   },
   previewCanvas: {
     width: "100%",
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
