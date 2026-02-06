@@ -2,8 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -70,13 +69,15 @@ function inferImageMimeType(image: SelectedImage): string {
   return "image/jpeg";
 }
 
-function mmToPrintPoints(mm: number): number {
-  // 72 points per inch, 25.4 mm per inch
-  return Math.round((mm / 25.4) * 72);
-}
-
 export default function HomeScreen() {
-  const [images, setImages] = useState<SelectedImage[]>([]);
+  const [images, setImages] = useState<SelectedImage[]>([
+    {
+      height: 373,
+      mimeType: "image/jpeg",
+      uri: "file:///data/user/0/com.anonymous.convertimagestopdfapp/cache/ImagePicker/3cee4a30-da7b-42ba-b622-52fbd4942b05.jpeg",
+      width: 560,
+    },
+  ]);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
@@ -85,12 +86,7 @@ export default function HomeScreen() {
     width: 0,
     height: 0,
   });
-  const autoAdjustTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const autoAdjustIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
 
@@ -98,49 +94,6 @@ export default function HomeScreen() {
     () => getPageDimensionsMm(paperSize, orientation),
     [paperSize, orientation],
   );
-
-  const maxMarginMm = useMemo(
-    () => Math.floor(Math.max(0, Math.min(widthMm, heightMm) / 2 - 1)),
-    [heightMm, widthMm],
-  );
-
-  useEffect(() => {
-    setMarginMm((current) => clamp(current, 0, maxMarginMm));
-  }, [maxMarginMm]);
-
-  const adjustMargin = useCallback(
-    (delta: number) => {
-      setMarginMm((value) => clamp(value + delta, 0, maxMarginMm));
-    },
-    [maxMarginMm],
-  );
-
-  const stopAutoAdjust = useCallback(() => {
-    if (autoAdjustTimeoutRef.current) {
-      clearTimeout(autoAdjustTimeoutRef.current);
-      autoAdjustTimeoutRef.current = null;
-    }
-    if (autoAdjustIntervalRef.current) {
-      clearInterval(autoAdjustIntervalRef.current);
-      autoAdjustIntervalRef.current = null;
-    }
-  }, []);
-
-  const startAutoAdjust = useCallback(
-    (delta: number) => {
-      adjustMargin(delta);
-      stopAutoAdjust();
-
-      autoAdjustTimeoutRef.current = setTimeout(() => {
-        autoAdjustIntervalRef.current = setInterval(() => {
-          setMarginMm((value) => clamp(value + delta, 0, maxMarginMm));
-        }, 110);
-      }, 240);
-    },
-    [adjustMargin, maxMarginMm, stopAutoAdjust],
-  );
-
-  useEffect(() => stopAutoAdjust, [stopAutoAdjust]);
 
   const previewAspectRatio = useMemo(() => {
     return widthMm / heightMm;
@@ -211,7 +164,7 @@ export default function HomeScreen() {
     ],
   );
 
-  const pickImages = useCallback(async () => {
+  const pickImages = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(
@@ -240,19 +193,15 @@ export default function HomeScreen() {
           height: asset.height ?? 0,
           mimeType: asset.mimeType ?? null,
         }));
+
       return [...previous, ...additions];
     });
-  }, []);
-
-  const removeImage = useCallback((uri: string) => {
-    setImages((previous) => previous.filter((item) => item.uri !== uri));
-  }, []);
+  };
 
   const buildPdfHtml = useCallback(
     (imageSources: string[]) => {
       const contentWidthMm = Math.max(widthMm - marginMm * 2, 1);
       const contentHeightMm = Math.max(heightMm - marginMm * 2, 1);
-
       const pages = imageSources
         .map(
           (source, index) => `
@@ -270,7 +219,7 @@ export default function HomeScreen() {
       <html lang="es">
         <head>
           <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
           <style>
             @page {
               size: ${widthMm}mm ${heightMm}mm;
@@ -280,7 +229,6 @@ export default function HomeScreen() {
             html, body {
               margin: 0;
               padding: 0;
-              background: #ffffff;
             }
 
             .sheet {
@@ -344,26 +292,9 @@ export default function HomeScreen() {
       );
 
       const html = buildPdfHtml(imageSources);
-      const file = await Print.printToFileAsync({
+      await Print.printAsync({
         html,
-        // width: mmToPrintPoints(widthMm),
-        // height: mmToPrintPoints(heightMm),
-        margins: {
-          top: 0,
-          right: 0,
-          bottom: 0,
-          left: 0,
-        },
-      });
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (!isAvailable) {
-        Alert.alert("PDF creado", `Se generó correctamente en: ${file.uri}`);
-        return;
-      }
-
-      await Sharing.shareAsync(file.uri, {
-        mimeType: "application/pdf",
-        UTI: "com.adobe.pdf",
+        orientation: Print.Orientation[orientation],
       });
     } catch (error) {
       Alert.alert("Error", "No se pudo generar o compartir el PDF.");
@@ -399,13 +330,15 @@ export default function HomeScreen() {
 
         <Pressable
           style={styles.removeButton}
-          onPress={() => removeImage(item.uri)}
+          onPress={() =>
+            setImages((previous) => previous.filter((e) => e.uri !== item.uri))
+          }
         >
           <Ionicons name="trash-outline" size={16} color="#334155" />
         </Pressable>
       </View>
     ),
-    [removeImage, images],
+    [images],
   );
 
   return (
@@ -503,7 +436,7 @@ export default function HomeScreen() {
                 <Ionicons name="scan-outline" size={16} color="#334155" />
                 <Text style={styles.controlTitle}>Padding de página</Text>
               </View>
-              <View style={styles.marginRow}>
+              {/* <View style={styles.marginRow}>
                 <Pressable
                   onPressIn={() => startAutoAdjust(-2)}
                   onPressOut={stopAutoAdjust}
@@ -521,7 +454,7 @@ export default function HomeScreen() {
                 >
                   <Text style={styles.marginControlText}>+</Text>
                 </Pressable>
-              </View>
+              </View> */}
             </View>
 
             <View style={styles.previewCard}>
