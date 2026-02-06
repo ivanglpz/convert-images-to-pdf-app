@@ -37,16 +37,31 @@ const PAPER_SIZES: Record<PaperSize, { widthMm: number; heightMm: number }> = {
   Legal: { widthMm: 215.9, heightMm: 355.6 },
 };
 
+const COLORS = {
+  bg: "#f3f4f6",
+  surface: "#ffffff",
+  surfaceAlt: "#f8fafc",
+  stroke: "#dbe3ee",
+  text: "#0f172a",
+  textMuted: "#5b667a",
+  primary: "#0f172a",
+  primaryText: "#ffffff",
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const escapeAttribute = (value: string) =>
   value
     .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+function mmToPrintPoints(mm: number): number {
+  return Math.round((mm / 25.4) * 72);
+}
 
 function getPageDimensionsMm(paperSize: PaperSize, orientation: Orientation) {
   const base = PAPER_SIZES[paperSize];
@@ -73,51 +88,77 @@ export default function HomeScreen() {
   const [images, setImages] = useState<SelectedImage[]>([]);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
-  const [marginMm, setMarginMm] = useState(10);
-  const [isConverting, setIsConverting] = useState(false);
+  const [paddingMm, setPaddingMm] = useState(10);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [previewCanvasSize, setPreviewCanvasSize] = useState({
     width: 0,
     height: 0,
   });
 
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
 
   const { widthMm, heightMm } = useMemo(
     () => getPageDimensionsMm(paperSize, orientation),
-    [paperSize, orientation],
+    [orientation, paperSize],
   );
 
-  const maxMarginMm = useMemo(
+  const maxPaddingMm = useMemo(
     () => Math.floor(Math.max(0, Math.min(widthMm, heightMm) / 2 - 1)),
     [heightMm, widthMm],
   );
 
-  const previewAspectRatio = useMemo(() => {
-    return widthMm / heightMm;
-  }, [heightMm, widthMm]);
+  const previewAspectRatio = useMemo(
+    () => widthMm / heightMm,
+    [heightMm, widthMm],
+  );
 
   const previewContentSize = useMemo(
     () => ({
       width: Math.max(
         1,
-        previewCanvasSize.width * Math.max(0, 1 - (marginMm * 2) / widthMm),
+        previewCanvasSize.width * Math.max(0, 1 - (paddingMm * 2) / widthMm),
       ),
       height: Math.max(
         1,
-        previewCanvasSize.height * Math.max(0, 1 - (marginMm * 2) / heightMm),
+        previewCanvasSize.height * Math.max(0, 1 - (paddingMm * 2) / heightMm),
       ),
     }),
     [
       heightMm,
-      marginMm,
+      paddingMm,
       previewCanvasSize.height,
       previewCanvasSize.width,
       widthMm,
     ],
   );
 
-  const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
+  const horizontalPadding = useMemo(() => {
+    if (width >= 768) return 24;
+    if (width >= 420) return 16;
+    return 12;
+  }, [width]);
+
+  const contentMaxWidth = useMemo(() => {
+    if (width >= 1024) return 860;
+    if (width >= 768) return 720;
+    return width;
+  }, [width]);
+
+  const listContentStyle = useMemo(
+    () => ({
+      paddingTop: Math.max(8, insets.top * 0.35),
+      paddingBottom: Math.max(24, insets.bottom + 20),
+      paddingHorizontal: horizontalPadding,
+      alignSelf: "center" as const,
+      width: "100%" as const,
+      maxWidth: contentMaxWidth,
+      gap: 12,
+    }),
+    [contentMaxWidth, horizontalPadding, insets.bottom, insets.top],
+  );
+
+  const onPreviewLayout = useCallback((event: LayoutChangeEvent) => {
     const { width: canvasWidth, height: canvasHeight } =
       event.nativeEvent.layout;
     setPreviewCanvasSize((current) => {
@@ -128,41 +169,7 @@ export default function HomeScreen() {
     });
   }, []);
 
-  const horizontalPadding = useMemo(() => {
-    if (width >= 768) return 24;
-    if (width >= 420) return 16;
-    return 12;
-  }, [width]);
-
-  const contentMaxWidth = useMemo(() => {
-    if (width >= 1280) return 940;
-    if (width >= 1024) return 860;
-    if (width >= 768) return 720;
-    return width;
-  }, [width]);
-
-  const responsiveContentStyle = useMemo(
-    () => ({
-      paddingTop: Math.max(8, insets.top * 3),
-      paddingBottom: Math.max(20, insets.bottom + 16),
-      paddingHorizontal: horizontalPadding,
-      gap: width >= 768 ? 12 : 10,
-      alignSelf: "center" as const,
-      width: "100%" as const,
-      maxWidth: contentMaxWidth,
-      minHeight: height - insets.top - insets.bottom,
-    }),
-    [
-      contentMaxWidth,
-      height,
-      horizontalPadding,
-      insets.bottom,
-      insets.top,
-      width,
-    ],
-  );
-
-  const pickImages = async () => {
+  const pickImages = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(
@@ -191,19 +198,19 @@ export default function HomeScreen() {
           height: asset.height ?? 0,
           mimeType: asset.mimeType ?? null,
         }));
-
       return [...previous, ...additions];
     });
-  };
+  }, []);
 
   const buildPdfHtml = useCallback(
     (imageSources: string[]) => {
-      const contentWidthMm = Math.max(widthMm - marginMm * 2, 1);
-      const contentHeightMm = Math.max(heightMm - marginMm * 2, 1);
+      const contentWidthMm = Math.max(widthMm - paddingMm * 2, 1);
+      const contentHeightMm = Math.max(heightMm - paddingMm * 2, 1);
+
       const pages = imageSources
         .map(
           (source, index) => `
-          <section class="sheet">
+          <section class="sheet ${orientation}">
             <div class="content">
               <img src="${escapeAttribute(source)}" alt="Imagen ${index + 1}" />
             </div>
@@ -217,7 +224,7 @@ export default function HomeScreen() {
       <html lang="es">
         <head>
           <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <style>
             @page {
               size: ${widthMm}mm ${heightMm}mm;
@@ -227,6 +234,7 @@ export default function HomeScreen() {
             html, body {
               margin: 0;
               padding: 0;
+              background: #ffffff;
             }
 
             .sheet {
@@ -254,10 +262,18 @@ export default function HomeScreen() {
             }
 
             .content img {
-              width: 100%;
-              height: 100%;
-              object-fit: contain;
+              max-width: 100%;
+              max-height: 100%;
+              width: auto;
+              height: auto;
               display: block;
+            }
+
+            .sheet.landscape .content img {
+              max-width: ${contentHeightMm}mm;
+              max-height: ${contentWidthMm}mm;
+              transform: rotate(90deg);
+              transform-origin: center center;
             }
           </style>
         </head>
@@ -267,10 +283,10 @@ export default function HomeScreen() {
       </html>
     `;
     },
-    [heightMm, marginMm, widthMm],
+    [heightMm, orientation, paddingMm, widthMm],
   );
 
-  const convertToPdf = useCallback(async () => {
+  const generatePdf = useCallback(async () => {
     if (!images.length) {
       Alert.alert(
         "Sin imágenes",
@@ -279,7 +295,7 @@ export default function HomeScreen() {
       return;
     }
 
-    setIsConverting(true);
+    setIsGenerating(true);
     try {
       const imageSources = await Promise.all(
         images.map(async (image) => {
@@ -298,30 +314,32 @@ export default function HomeScreen() {
       Alert.alert("Error", "No se pudo generar o compartir el PDF.");
       console.error(error);
     } finally {
-      setIsConverting(false);
+      setIsGenerating(false);
     }
-  }, [buildPdfHtml, images]);
+  }, [buildPdfHtml, heightMm, images, widthMm]);
 
   const renderImageItem = useCallback(
     ({ item, drag, isActive, getIndex }: RenderItemParams<SelectedImage>) => (
-      <View style={[styles.imageRow, isActive && styles.imageRowDragging]}>
+      <View style={[styles.pageRow, isActive && styles.pageRowDragging]}>
         <Pressable
           style={styles.dragHandle}
           onPressIn={drag}
           disabled={isActive}
         >
-          <View style={styles.dragHandleContent}>
-            <Ionicons name="reorder-three-outline" size={16} color="#334155" />
-          </View>
+          <Ionicons
+            name="reorder-three-outline"
+            size={18}
+            color={COLORS.textMuted}
+          />
         </Pressable>
+
         <Image source={{ uri: item.uri }} style={styles.thumbnail} />
-        <View style={styles.imageMeta}>
-          <Text style={styles.imageLabel}>
-            Página {(getIndex?.() ?? 0) + 1}
-          </Text>
-          <Text style={styles.imageSub}>
+
+        <View style={styles.pageMeta}>
+          <Text style={styles.pageTitle}>Página {(getIndex?.() ?? 0) + 1}</Text>
+          <Text style={styles.pageSub}>
             {item.width > 0 && item.height > 0
-              ? `${item.width}x${item.height}`
+              ? `${item.width} × ${item.height}`
               : "Sin dimensiones"}
           </Text>
         </View>
@@ -329,15 +347,17 @@ export default function HomeScreen() {
         <Pressable
           style={styles.removeButton}
           onPress={() =>
-            setImages((previous) => previous.filter((e) => e.uri !== item.uri))
+            setImages((previous) => previous.filter((p) => p.uri !== item.uri))
           }
         >
-          <Ionicons name="trash-outline" size={16} color="#334155" />
+          <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
         </Pressable>
       </View>
     ),
-    [images],
+    [],
   );
+
+  const infoSummary = `${paperSize} · ${orientation} · ${paddingMm}mm`;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -346,48 +366,56 @@ export default function HomeScreen() {
         keyExtractor={(item) => item.uri}
         renderItem={renderImageItem}
         onDragEnd={({ data }) => setImages(data)}
-        contentContainerStyle={[
-          styles.contentContainer,
-          responsiveContentStyle,
-        ]}
+        contentContainerStyle={[styles.contentContainer, listContentStyle]}
         ListHeaderComponent={
-          <View>
-            <Text style={styles.title}>Convertir Imágenes a PDF</Text>
-            <Text style={styles.subtitle}>
-              Cada imagen será una página. La imagen se ajusta en modo contain
-              respetando márgenes.
-            </Text>
-
-            <Pressable style={styles.primaryButton} onPress={pickImages}>
-              <View style={styles.buttonContent}>
-                <Ionicons name="images-outline" size={18} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Seleccionar fotos</Text>
+          <View style={styles.headerStack}>
+            <View style={styles.heroCard}>
+              <View style={styles.heroTopRow}>
+                <Text style={styles.heroTitle}>Imágenes a PDF</Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{images.length} pág.</Text>
+                </View>
               </View>
-            </Pressable>
+              <Text style={styles.heroSubtitle}>
+                Ordena tus fotos, ajusta formato de página y genera el PDF con
+                una imagen por página.
+              </Text>
 
-            <View style={styles.controlBlock}>
-              <View style={styles.controlTitleRow}>
+              <Pressable style={styles.ctaButton} onPress={pickImages}>
                 <Ionicons
-                  name="document-text-outline"
-                  size={16}
-                  color="#334155"
+                  name="images-outline"
+                  size={18}
+                  color={COLORS.primaryText}
                 />
-                <Text style={styles.controlTitle}>Paper size</Text>
+                <Text style={styles.ctaText}>Seleccionar fotos</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons
+                  name="options-outline"
+                  size={17}
+                  color={COLORS.text}
+                />
+                <Text style={styles.sectionTitle}>Ajustes de página</Text>
               </View>
-              <View style={styles.optionRow}>
+
+              <Text style={styles.controlLabel}>Tamaño de página</Text>
+              <View style={styles.chipRow}>
                 {(["A4", "Letter", "Legal"] as const).map((option) => (
                   <Pressable
                     key={option}
                     onPress={() => setPaperSize(option)}
                     style={[
-                      styles.optionButton,
-                      paperSize === option && styles.optionButtonActive,
+                      styles.chip,
+                      paperSize === option && styles.chipActive,
                     ]}
                   >
                     <Text
                       style={[
-                        styles.optionButtonText,
-                        paperSize === option && styles.optionButtonTextActive,
+                        styles.chipText,
+                        paperSize === option && styles.chipTextActive,
                       ]}
                     >
                       {option}
@@ -395,31 +423,35 @@ export default function HomeScreen() {
                   </Pressable>
                 ))}
               </View>
-            </View>
 
-            <View style={styles.controlBlock}>
-              <View style={styles.controlTitleRow}>
-                <Ionicons
-                  name="phone-portrait-outline"
-                  size={16}
-                  color="#334155"
-                />
-                <Text style={styles.controlTitle}>Orientation</Text>
-              </View>
-              <View style={styles.optionRow}>
+              <Text style={styles.controlLabel}>Orientación</Text>
+              <View style={styles.chipRow}>
                 {(["portrait", "landscape"] as const).map((option) => (
                   <Pressable
                     key={option}
                     onPress={() => setOrientation(option)}
                     style={[
-                      styles.optionButton,
-                      orientation === option && styles.optionButtonActive,
+                      styles.chip,
+                      orientation === option && styles.chipActive,
                     ]}
                   >
+                    <Ionicons
+                      name={
+                        option === "portrait"
+                          ? "phone-portrait-outline"
+                          : "phone-landscape-outline"
+                      }
+                      size={14}
+                      color={
+                        orientation === option
+                          ? COLORS.primaryText
+                          : COLORS.textMuted
+                      }
+                    />
                     <Text
                       style={[
-                        styles.optionButtonText,
-                        orientation === option && styles.optionButtonTextActive,
+                        styles.chipText,
+                        orientation === option && styles.chipTextActive,
                       ]}
                     >
                       {option}
@@ -427,44 +459,50 @@ export default function HomeScreen() {
                   </Pressable>
                 ))}
               </View>
-            </View>
 
-            <View style={styles.controlBlock}>
-              <View style={styles.controlTitleRow}>
-                <Ionicons name="scan-outline" size={16} color="#334155" />
-                <Text style={styles.controlTitle}>Padding de página</Text>
-              </View>
-              <View style={styles.marginRow}>
+              <Text style={styles.controlLabel}>Padding de página</Text>
+              <View style={styles.paddingRow}>
                 <Pressable
                   onPress={() =>
-                    setMarginMm((value) => clamp(value - 2, 0, maxMarginMm))
+                    setPaddingMm((current) =>
+                      clamp(current - 2, 0, maxPaddingMm),
+                    )
                   }
-                  style={styles.marginControl}
+                  style={styles.paddingButton}
                 >
-                  <Text style={styles.marginControlText}>-</Text>
+                  <Ionicons name="remove" size={20} color={COLORS.text} />
                 </Pressable>
-                <View style={styles.marginValue}>
-                  <Text style={styles.marginValueText}>{marginMm} mm</Text>
+
+                <View style={styles.paddingValueBox}>
+                  <Text style={styles.paddingValue}>{paddingMm} mm</Text>
+                  <Text style={styles.paddingHint}>{infoSummary}</Text>
                 </View>
+
                 <Pressable
                   onPress={() =>
-                    setMarginMm((value) => clamp(value + 2, 0, maxMarginMm))
+                    setPaddingMm((current) =>
+                      clamp(current + 2, 0, maxPaddingMm),
+                    )
                   }
-                  style={styles.marginControl}
+                  style={styles.paddingButton}
                 >
-                  <Text style={styles.marginControlText}>+</Text>
+                  <Ionicons name="add" size={20} color={COLORS.text} />
                 </Pressable>
               </View>
             </View>
 
-            <View style={styles.previewCard}>
-              <Text style={styles.previewTitle}>Vista previa de página</Text>
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="scan-outline" size={17} color={COLORS.text} />
+                <Text style={styles.sectionTitle}>Vista previa</Text>
+              </View>
+
               <View
                 style={[
                   styles.previewCanvas,
                   { aspectRatio: previewAspectRatio },
                 ]}
-                onLayout={handlePreviewLayout}
+                onLayout={onPreviewLayout}
               >
                 <View style={[styles.previewContent, previewContentSize]}>
                   {images[0]?.uri ? (
@@ -482,35 +520,51 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.actionsRow}>
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  (!images.length || isConverting) && styles.buttonDisabled,
-                ]}
-                onPress={convertToPdf}
-                disabled={!images.length || isConverting}
-              >
-                {isConverting ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <Ionicons
-                      name="document-attach-outline"
-                      size={18}
-                      color="#ffffff"
-                    />
-                    <Text style={styles.primaryButtonText}>Generar PDF</Text>
-                  </View>
-                )}
-              </Pressable>
+            <Pressable
+              style={[
+                styles.downloadButton,
+                (!images.length || isGenerating) &&
+                  styles.downloadButtonDisabled,
+              ]}
+              onPress={generatePdf}
+              disabled={!images.length || isGenerating}
+            >
+              {isGenerating ? (
+                <ActivityIndicator color={COLORS.primaryText} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="download-outline"
+                    size={18}
+                    color={COLORS.primaryText}
+                  />
+                  <Text style={styles.downloadButtonText}>Descargar PDF</Text>
+                </>
+              )}
+            </Pressable>
+
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="list-outline" size={17} color={COLORS.text} />
+                <Text style={styles.sectionTitle}>Orden de páginas</Text>
+              </View>
+              <Text style={styles.listHint}>
+                Usa el icono de arrastre para reordenar las imágenes.
+              </Text>
             </View>
           </View>
         }
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
-            Aún no has seleccionado imágenes.
-          </Text>
+          <View style={styles.emptyListCard}>
+            <Ionicons
+              name="images-outline"
+              size={22}
+              color={COLORS.textMuted}
+            />
+            <Text style={styles.emptyListText}>
+              Aún no has seleccionado imágenes.
+            </Text>
+          </View>
         }
       />
     </SafeAreaView>
@@ -520,131 +574,162 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#f4f6f8",
+    backgroundColor: COLORS.bg,
   },
   contentContainer: {
     flexGrow: 1,
   },
-  title: {
-    fontSize: 26,
+  headerStack: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  heroCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    padding: 16,
+    gap: 12,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  heroTitle: {
+    fontSize: 22,
     fontWeight: "700",
-    color: "#0f172a",
+    color: COLORS.text,
   },
-  subtitle: {
-    marginTop: 8,
-    marginBottom: 16,
+  badge: {
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.textMuted,
+  },
+  heroSubtitle: {
+    color: COLORS.textMuted,
     fontSize: 14,
-    color: "#475569",
+    lineHeight: 20,
   },
-  primaryButton: {
+  ctaButton: {
+    minHeight: 48,
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    backgroundColor: "#0f172a",
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
   },
-  primaryButtonText: {
-    color: "#ffffff",
+  ctaText: {
+    color: COLORS.primaryText,
     fontWeight: "600",
     fontSize: 15,
   },
-  buttonContent: {
+  sectionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    padding: 14,
+    gap: 10,
+  },
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 8,
   },
-  buttonDisabled: {
-    opacity: 0.55,
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORS.text,
   },
-  controlBlock: {
-    marginTop: 14,
-  },
-  controlTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
-  },
-  controlTitle: {
-    fontSize: 13,
-    color: "#334155",
+  controlLabel: {
+    color: COLORS.textMuted,
+    fontSize: 12,
     fontWeight: "600",
+    marginTop: 4,
   },
-  optionRow: {
+  chipRow: {
     flexDirection: "row",
-    gap: 8,
     flexWrap: "wrap",
+    gap: 8,
   },
-  optionButton: {
+  chip: {
+    minHeight: 40,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surface,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
   },
-  optionButtonActive: {
-    borderColor: "#0f172a",
-    backgroundColor: "#0f172a",
+  chipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
-  optionButtonText: {
-    color: "#334155",
-    fontWeight: "500",
+  chipText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
   },
-  optionButtonTextActive: {
-    color: "#ffffff",
+  chipTextActive: {
+    color: COLORS.primaryText,
   },
-  marginRow: {
+  paddingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  marginControl: {
+  paddingButton: {
     width: 44,
     height: 44,
-    borderRadius: 10,
+    borderRadius: 11,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surface,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ffffff",
   },
-  marginControlText: {
-    fontSize: 22,
-    color: "#0f172a",
-    marginTop: -2,
-  },
-  marginValue: {
+  paddingValueBox: {
     flex: 1,
-    height: 44,
-    borderRadius: 10,
+    minHeight: 44,
+    borderRadius: 11,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#ffffff",
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
-  marginValueText: {
-    color: "#0f172a",
-    fontWeight: "600",
+  paddingValue: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
   },
-  previewCard: {
-    marginTop: 16,
-    borderRadius: 12,
-  },
-  previewTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: 10,
+  paddingHint: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 2,
   },
   previewCanvas: {
     width: "100%",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#ffffff",
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surfaceAlt,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -659,82 +744,101 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   previewEmpty: {
-    color: "#475569",
+    color: COLORS.textMuted,
     fontSize: 13,
-    padding: 16,
     textAlign: "center",
+    paddingHorizontal: 12,
   },
-  actionsRow: {
-    marginTop: 16,
-    gap: 10,
-  },
-  imageRow: {
+  downloadButton: {
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    padding: 10,
+    justifyContent: "center",
+    gap: 8,
+  },
+  downloadButtonDisabled: {
+    opacity: 0.55,
+  },
+  downloadButtonText: {
+    color: COLORS.primaryText,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  listHint: {
+    color: COLORS.textMuted,
+    fontSize: 13,
+  },
+  pageRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
-  },
-  imageRowDragging: {
-    opacity: 0.8,
-    borderColor: "#94a3b8",
-  },
-  thumbnail: {
-    width: 52,
-    height: 52,
-    borderRadius: 8,
-    backgroundColor: "#e2e8f0",
-  },
-  imageMeta: {
-    flex: 1,
-  },
-  imageLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#0f172a",
-  },
-  imageSub: {
-    marginTop: 2,
-    fontSize: 12,
-    color: "#64748b",
-  },
-  removeButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: COLORS.stroke,
+    padding: 10,
+    marginBottom: 8,
+  },
+  pageRowDragging: {
+    borderColor: "#93a6bd",
+    opacity: 0.9,
   },
   dragHandle: {
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    borderRadius: 8,
+    width: 34,
+    height: 44,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#f8fafc",
-  },
-  dragHandleContent: {
-    flexDirection: "row",
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surfaceAlt,
     alignItems: "center",
-    gap: 4,
+    justifyContent: "center",
   },
-  dragHandleText: {
-    color: "#334155",
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: "#d8dee8",
+  },
+  pageMeta: {
+    flex: 1,
+  },
+  pageTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  pageSub: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  removeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyListCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: COLORS.surface,
+    minHeight: 76,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  emptyListText: {
+    color: COLORS.textMuted,
+    fontSize: 13,
     fontWeight: "500",
-    fontSize: 13,
-  },
-  removeButtonText: {
-    color: "#334155",
-    fontWeight: "500",
-    fontSize: 13,
-  },
-  emptyText: {
-    marginTop: 14,
-    textAlign: "center",
-    color: "#64748b",
-    fontSize: 13,
   },
 });
