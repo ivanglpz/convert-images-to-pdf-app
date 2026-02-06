@@ -359,6 +359,14 @@ export default function HomeScreen() {
 
   const infoSummary = `${paperSize} · ${orientation} · ${paddingMm}mm`;
 
+  const previewImageStyle = useMemo(
+    () => [
+      styles.previewImage,
+      orientation === "landscape" ? { transform: [{ rotate: "90deg" }] } : null,
+    ],
+    [orientation],
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <DraggableFlatList
@@ -508,7 +516,7 @@ export default function HomeScreen() {
                   {images[0]?.uri ? (
                     <Image
                       source={{ uri: images[0].uri }}
-                      style={styles.previewImage}
+                      style={previewImageStyle}
                       resizeMode="contain"
                     />
                   ) : (
