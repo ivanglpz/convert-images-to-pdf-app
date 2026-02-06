@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -69,12 +70,21 @@ function inferImageMimeType(image: SelectedImage): string {
   return "image/jpeg";
 }
 
+function mmToPrintPoints(mm: number): number {
+  // 72 points per inch, 25.4 mm per inch
+  return Math.round((mm / 25.4) * 72);
+}
+
 export default function HomeScreen() {
   const [images, setImages] = useState<SelectedImage[]>([]);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [marginMm, setMarginMm] = useState(10);
   const [isConverting, setIsConverting] = useState(false);
+  const [previewCanvasSize, setPreviewCanvasSize] = useState({
+    width: 0,
+    height: 0,
+  });
   const autoAdjustTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -133,10 +143,39 @@ export default function HomeScreen() {
   useEffect(() => stopAutoAdjust, [stopAutoAdjust]);
 
   const previewAspectRatio = useMemo(() => {
-    const contentWidth = Math.max(widthMm - marginMm * 2, 1);
-    const contentHeight = Math.max(heightMm - marginMm * 2, 1);
-    return contentWidth / contentHeight;
-  }, [heightMm, marginMm, widthMm]);
+    return widthMm / heightMm;
+  }, [heightMm, widthMm]);
+
+  const previewContentSize = useMemo(
+    () => ({
+      width: Math.max(
+        1,
+        previewCanvasSize.width * Math.max(0, 1 - (marginMm * 2) / widthMm),
+      ),
+      height: Math.max(
+        1,
+        previewCanvasSize.height * Math.max(0, 1 - (marginMm * 2) / heightMm),
+      ),
+    }),
+    [
+      heightMm,
+      marginMm,
+      previewCanvasSize.height,
+      previewCanvasSize.width,
+      widthMm,
+    ],
+  );
+
+  const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width: canvasWidth, height: canvasHeight } =
+      event.nativeEvent.layout;
+    setPreviewCanvasSize((current) => {
+      if (current.width === canvasWidth && current.height === canvasHeight) {
+        return current;
+      }
+      return { width: canvasWidth, height: canvasHeight };
+    });
+  }, []);
 
   const horizontalPadding = useMemo(() => {
     if (width >= 768) return 24;
@@ -305,7 +344,17 @@ export default function HomeScreen() {
       );
 
       const html = buildPdfHtml(imageSources);
-      const file = await Print.printToFileAsync({ html });
+      const file = await Print.printToFileAsync({
+        html,
+        // width: mmToPrintPoints(widthMm),
+        // height: mmToPrintPoints(heightMm),
+        margins: {
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+        },
+      });
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         Alert.alert("PDF creado", `Se generó correctamente en: ${file.uri}`);
@@ -482,18 +531,21 @@ export default function HomeScreen() {
                   styles.previewCanvas,
                   { aspectRatio: previewAspectRatio },
                 ]}
+                onLayout={handlePreviewLayout}
               >
-                {images[0]?.uri ? (
-                  <Image
-                    source={{ uri: images[0].uri }}
-                    style={styles.previewImage}
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <Text style={styles.previewEmpty}>
-                    Selecciona imágenes para previsualizar
-                  </Text>
-                )}
+                <View style={[styles.previewContent, previewContentSize]}>
+                  {images[0]?.uri ? (
+                    <Image
+                      source={{ uri: images[0].uri }}
+                      style={styles.previewImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Text style={styles.previewEmpty}>
+                      Selecciona imágenes para previsualizar
+                    </Text>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -661,6 +713,11 @@ const styles = StyleSheet.create({
     borderColor: "#cbd5e1",
     backgroundColor: "#ffffff",
     overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewContent: {
+    position: "absolute",
     alignItems: "center",
     justifyContent: "center",
   },
